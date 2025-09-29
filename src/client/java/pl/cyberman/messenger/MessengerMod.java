@@ -29,6 +29,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
+
 public class MessengerMod implements ClientModInitializer {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
 
@@ -344,4 +347,14 @@ public class MessengerMod implements ClientModInitializer {
     public static void ok(String s)  { if (MC != null && MC.inGameHud != null) MC.inGameHud.getChatHud().addMessage(Text.literal(s).formatted(Formatting.GREEN)); }
     public static void err(String s) { if (MC != null && MC.inGameHud != null) MC.inGameHud.getChatHud().addMessage(Text.literal(s).formatted(Formatting.RED)); }
     public static void info(String s){ if (MC != null && MC.inGameHud != null) MC.inGameHud.getChatHud().addMessage(Text.literal(s).formatted(Formatting.YELLOW)); }
+    public static String version() {
+        try {
+            return FabricLoader.getInstance()
+                    .getModContainer("messenger")
+                    .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                    .orElse("dev");
+        } catch (Throwable t) {
+            return "dev";
+        }
+    }
 }

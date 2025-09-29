@@ -1,7 +1,7 @@
-{
+﻿{
 	"schemaVersion": 1,
 	"id": "messenger",
-	"version": "${version}",
+	"version": "1.0.0",
 	"name": "Messenger",
 	"description": "Auto-sends a chat message on an interval (client-only). Toggle + client commands.",
 	"authors": ["cyberman"],
@@ -20,3 +20,4 @@
 		"issues": "https://github.com/<YOUR_GITHUB_USERNAME>/Messenger/issues"
 	}
 }
+

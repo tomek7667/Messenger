@@ -281,7 +281,7 @@ public class MessengerScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         // top-right small version label
-        String ver = "Messenger v1.0.0";
+        String ver = "Messenger v" + MessengerMod.version();
         int verW = this.textRenderer.getWidth(ver);
         ctx.drawTextWithShadow(this.textRenderer, ver, panelX + panelW - verW, 8, 0xFF888888);
 
