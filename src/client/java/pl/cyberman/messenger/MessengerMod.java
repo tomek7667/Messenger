@@ -1,8 +1,8 @@
 package pl.cyberman.messenger;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
@@ -11,11 +11,20 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.GameMenuScreen;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
+
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,22 +32,42 @@ import java.util.List;
 public class MessengerMod implements ClientModInitializer {
     private static final MinecraftClient MC = MinecraftClient.getInstance();
 
+    // === persistence ===
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static Path CONFIG_PATH() {
+        return MC.runDirectory.toPath().resolve("config/messenger.json");
+    }
+    private static Path EXPORT_PATH() {
+        return MC.runDirectory.toPath().resolve("config/messenger_export.json");
+    }
+    private static final Type SAVE_LIST_TYPE = new TypeToken<List<SaveTask>>() {}.getType();
+
+    private static class SaveTask {
+        String text;
+        double intervalMinutes;
+        boolean enabled;
+        SaveTask(String text, double intervalMinutes, boolean enabled) {
+            this.text = text;
+            this.intervalMinutes = intervalMinutes;
+            this.enabled = enabled;
+        }
+    }
+
     /** Each message with its own (possibly fractional) minutes interval. */
     public static class MessageTask {
         public String text;
-        public double intervalMinutes; // > 0; supports 0.01, etc.
+        public double intervalMinutes; // > 0
         public boolean enabled = false;
         public long nextSendMs = 0L;
 
         public MessageTask(String text, double intervalMinutes) {
             this.text = text;
-            this.intervalMinutes = intervalMinutes; // no clamping
+            this.intervalMinutes = intervalMinutes;
             scheduleNext();
         }
 
         public void scheduleNext() {
             long ms = (long)Math.round(intervalMinutes * 60_000.0);
-            // tiny safety floor so zero/near-zero still progresses
             this.nextSendMs = now() + Math.max(50L, ms);
         }
     }
@@ -48,6 +77,9 @@ public class MessengerMod implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // Load persisted tasks on startup
+        loadTasks();
+
         // Always-on scheduler
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client == null || client.player == null) return;
@@ -80,7 +112,7 @@ public class MessengerMod implements ClientModInitializer {
 
                     .then(ClientCommandManager.literal("list")
                         .executes(ctx -> {
-                            if (TASKS.isEmpty()) { ok("No tasks yet. Use /messenger add <minutes> <text...>"); return 1; }
+                            if (TASKS.isEmpty()) { info("No tasks yet. Use /messenger add <minutes> <text...>"); return 1; }
                             info("Tasks (" + TASKS.size() + "):");
                             for (int i = 0; i < TASKS.size(); i++) {
                                 MessageTask t = TASKS.get(i);
@@ -96,11 +128,12 @@ public class MessengerMod implements ClientModInitializer {
                                 .executes(ctx -> {
                                     String minStr = StringArgumentType.getString(ctx, "minutes");
                                     String txt = StringArgumentType.getString(ctx, "text");
-                                    double mins = parseMinutesClient(minStr);   // NaN if invalid
+                                    double mins = parseMinutesClient(minStr);
                                     if (Double.isNaN(mins) || mins <= 0) { err("Invalid minutes: " + minStr); return 1; }
                                     if (txt == null || txt.isBlank()) { err("Message cannot be empty."); return 1; }
                                     TASKS.add(new MessageTask(txt, mins));
-                                    ok("Added task #" + TASKS.size() + " every " + mins + " min");
+                                    saveTasks();
+                                    ok("Added task #" + TASKS.size() + "  every " + mins + " min");
                                     return 1;
                                 }))))
 
@@ -113,6 +146,7 @@ public class MessengerMod implements ClientModInitializer {
                                 t.enabled = true;
                                 sendChatAsPlayerClient(t.text);
                                 t.scheduleNext();
+                                saveTasks();
                                 ok("Enabled task #" + idx1 + " (sent once now)");
                                 return 1;
                             })))
@@ -124,6 +158,7 @@ public class MessengerMod implements ClientModInitializer {
                                 if (!checkIndexClient(idx1)) return 1;
                                 MessageTask t = TASKS.get(idx1 - 1);
                                 t.enabled = false;
+                                saveTasks();
                                 ok("Disabled task #" + idx1);
                                 return 1;
                             })))
@@ -142,6 +177,7 @@ public class MessengerMod implements ClientModInitializer {
                                 } else {
                                     ok("Task #" + idx1 + " disabled");
                                 }
+                                saveTasks();
                                 return 1;
                             })))
 
@@ -157,6 +193,7 @@ public class MessengerMod implements ClientModInitializer {
                                     MessageTask t = TASKS.get(idx1 - 1);
                                     t.intervalMinutes = mins;
                                     t.scheduleNext();
+                                    saveTasks();
                                     ok("Task #" + idx1 + " interval set to " + t.intervalMinutes + " min");
                                     return 1;
                                 }))))
@@ -169,6 +206,7 @@ public class MessengerMod implements ClientModInitializer {
                                 sendChatAsPlayerClient(t.text);
                                 t.scheduleNext();
                             }
+                            saveTasks();
                             ok("All tasks enabled (each sent once now).");
                             return 1;
                         }))
@@ -177,6 +215,7 @@ public class MessengerMod implements ClientModInitializer {
                         .executes(ctx -> {
                             if (TASKS.isEmpty()) { info("No tasks to disable."); return 1; }
                             for (MessageTask t : TASKS) t.enabled = false;
+                            saveTasks();
                             ok("All tasks disabled.");
                             return 1;
                         }))
@@ -184,7 +223,86 @@ public class MessengerMod implements ClientModInitializer {
         });
     }
 
-    // === helpers used by both screen and commands ===
+    // === persistence helpers ===
+
+    public static void saveTasks() {
+        try {
+            Path p = CONFIG_PATH();
+            Files.createDirectories(p.getParent());
+            List<SaveTask> out = new ArrayList<>();
+            for (MessageTask t : TASKS) out.add(new SaveTask(t.text, t.intervalMinutes, t.enabled));
+            String json = GSON.toJson(out, SAVE_LIST_TYPE);
+            Files.writeString(p, json, StandardCharsets.UTF_8);
+            ok("Saved " + out.size() + " task(s).");
+        } catch (Exception e) {
+            err("Save failed.");
+        }
+    }
+
+    public static void loadTasks() {
+        try {
+            Path p = CONFIG_PATH();
+            if (!Files.exists(p)) return;
+            String json = Files.readString(p, StandardCharsets.UTF_8);
+            List<SaveTask> in = GSON.fromJson(json, SAVE_LIST_TYPE);
+            TASKS.clear();
+            if (in != null) {
+                for (SaveTask s : in) {
+                    if (s == null) continue;
+                    double mins = (s.intervalMinutes > 0) ? s.intervalMinutes : 1.0;
+                    MessageTask t = new MessageTask(s.text == null ? "" : s.text, mins);
+                    t.enabled = s.enabled;
+                    t.scheduleNext(); // fresh countdown
+                    TASKS.add(t);
+                }
+            }
+            ok("Loaded " + TASKS.size() + " task(s).");
+        } catch (Exception e) {
+            err("Load failed.");
+        }
+    }
+
+    public static void exportTasksTo(Path p) {
+        try {
+            Files.createDirectories(p.getParent());
+            List<SaveTask> out = new ArrayList<>();
+            for (MessageTask t : TASKS) out.add(new SaveTask(t.text, t.intervalMinutes, t.enabled));
+            String json = GSON.toJson(out, SAVE_LIST_TYPE);
+            Files.writeString(p, json, StandardCharsets.UTF_8);
+            ok("Exported " + out.size() + " task(s).");
+        } catch (Exception e) {
+            err("Export failed.");
+        }
+    }
+
+    public static void importTasksFrom(Path p) {
+        try {
+            if (!Files.exists(p)) { err("File not found."); return; }
+            String json = Files.readString(p, StandardCharsets.UTF_8);
+            List<SaveTask> in = GSON.fromJson(json, SAVE_LIST_TYPE);
+            TASKS.clear();
+            if (in != null) {
+                for (SaveTask s : in) {
+                    if (s == null) continue;
+                    double mins = (s.intervalMinutes > 0) ? s.intervalMinutes : 1.0;
+                    MessageTask t = new MessageTask(s.text == null ? "" : s.text, mins);
+                    t.enabled = s.enabled;
+                    t.scheduleNext();
+                    TASKS.add(t);
+                }
+            }
+            saveTasks(); // also write to main config
+            ok("Imported " + TASKS.size() + " task(s).");
+        } catch (Exception e) {
+            err("Import failed.");
+        }
+    }
+
+    // simple wrappers to default export path (optional use)
+    public static void exportTasks() { exportTasksTo(EXPORT_PATH()); }
+    public static void importTasks() { importTasksFrom(EXPORT_PATH()); }
+
+    // === misc helpers ===
 
     public static boolean checkIndexClient(int idx1) {
         if (idx1 < 1 || idx1 > TASKS.size()) {

@@ -11,6 +11,8 @@ import net.minecraft.util.Formatting;
 import java.util.ArrayList;
 import java.util.List;
 
+import java.nio.file.Path;
+
 public class MessengerScreen extends Screen {
     private final Screen parent;
 
@@ -29,6 +31,11 @@ public class MessengerScreen extends Screen {
     private ButtonWidget prevBtn;
     private ButtonWidget nextBtn;
 
+    // Import/Export buttons
+    private ButtonWidget importBtn;
+    private ButtonWidget exportBtn;
+    private ButtonWidget openFolderBtn;
+
     // Track row widgets to rebuild on page change
     private final List<ButtonWidget> rowButtons = new ArrayList<>();
     private final List<TextFieldWidget> rowMinuteFields = new ArrayList<>();
@@ -45,7 +52,7 @@ public class MessengerScreen extends Screen {
 
         // --- Add form (top) ---
         addMinutesField = new TextFieldWidget(this.textRenderer, panelX, panelY, 70, 20, Text.literal("Minutes"));
-        addMinutesField.setText("1.0"); // label drawn in render()
+        addMinutesField.setText("1.0");
         this.addDrawableChild(addMinutesField);
 
         int msgW = Math.max(180, panelW - 70 - 70 - 10);
@@ -55,10 +62,11 @@ public class MessengerScreen extends Screen {
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Add"), b -> {
             String minStr = addMinutesField.getText();
             String msg = addMessageField.getText();
-            double mins = MessengerMod.parseMinutesClient(minStr); // NaN if invalid
+            double mins = MessengerMod.parseMinutesClient(minStr);
             if (Double.isNaN(mins) || mins <= 0) { MessengerMod.err("Invalid minutes: " + minStr); return; }
             if (msg == null || msg.isBlank()) { MessengerMod.err("Message cannot be empty."); return; }
             MessengerMod.TASKS.add(new MessengerMod.MessageTask(msg, mins));
+            MessengerMod.saveTasks();
             MessengerMod.ok("Added task #" + MessengerMod.TASKS.size() + "  every " + mins + " min");
             addMessageField.setText("");
             jumpToLastPage();
@@ -67,16 +75,15 @@ public class MessengerScreen extends Screen {
 
         listTopY = panelY + 34; // space for divider
 
-        // Nav + Done buttons
+        // Nav + Done + Import/Export
         int bottomY = this.height - 28;
 
         prevBtn = ButtonWidget.builder(Text.literal("Prev"), b -> {
             int total = MessengerMod.TASKS.size();
             if (total <= 0) return;
             int pages = Math.max(1, (int)Math.ceil(total / (double)maxRows));
-            // circular: if already at first page, go to last
             if (firstIndex == 0) {
-                firstIndex = (pages - 1) * maxRows;
+                firstIndex = (pages - 1) * maxRows; // circular back to last
             } else {
                 firstIndex = Math.max(0, firstIndex - maxRows);
             }
@@ -89,15 +96,48 @@ public class MessengerScreen extends Screen {
             if (total <= 0) return;
             int pages = Math.max(1, (int)Math.ceil(total / (double)maxRows));
             int lastFirst = (pages - 1) * maxRows;
-            // circular: if already at last page, go to first
             if (firstIndex >= lastFirst) {
-                firstIndex = 0;
+                firstIndex = 0; // circular to first
             } else {
                 firstIndex = Math.min(lastFirst, firstIndex + maxRows);
             }
             rebuildRowWidgets();
         }).dimensions(panelX + 65, bottomY, 60, 20).build();
         this.addDrawableChild(nextBtn);
+
+        // Import / Export / Open Folder at top-right of the panel
+        int topButtonsY = panelY - 16;
+
+        exportBtn = ButtonWidget.builder(Text.literal("Export"), b -> {
+            try {
+                MessengerMod.exportTasks(); // writes to config\messenger_export.json
+            } catch (Throwable t) {
+                MessengerMod.err("Export failed.");
+            }
+        }).dimensions(panelX + panelW - 198, topButtonsY, 60, 14).build();
+        this.addDrawableChild(exportBtn);
+
+        importBtn = ButtonWidget.builder(Text.literal("Import"), b -> {
+            try {
+                MessengerMod.importTasks(); // reads from config\messenger_export.json
+                rebuildRowWidgets();
+            } catch (Throwable t) {
+                MessengerMod.err("Import failed.");
+            }
+        }).dimensions(panelX + panelW - 132, topButtonsY, 60, 14).build();
+        this.addDrawableChild(importBtn);
+
+        openFolderBtn = ButtonWidget.builder(Text.literal("Open Folder"), b -> {
+            try {
+                Path cfg = MinecraftClient.getInstance().runDirectory.toPath().resolve("config");
+                // Use Windows Explorer directly (no AWT)
+                new ProcessBuilder("explorer.exe", cfg.toString()).start();
+                MessengerMod.info("Opened config folder.");
+            } catch (Throwable t) {
+                MessengerMod.err("Cannot open folder.");
+            }
+        }).dimensions(panelX + panelW - 65, topButtonsY, 60, 14).build();
+        this.addDrawableChild(openFolderBtn);
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> close())
             .dimensions(this.width / 2 - 40, bottomY, 80, 20).build());
@@ -128,7 +168,7 @@ public class MessengerScreen extends Screen {
         rowMessageFields.clear();
     }
 
-    private Text coloredOnOff(boolean on) {
+    private net.minecraft.text.Text coloredOnOff(boolean on) {
         return Text.literal(on ? "ON" : "OFF")
             .styled(s -> s.withColor(on ? Formatting.GREEN : Formatting.RED));
     }
@@ -165,7 +205,7 @@ public class MessengerScreen extends Screen {
             this.addDrawableChild(minutesField);
             rowMinuteFields.add(minutesField);
 
-            // Message field (flex width). Reserve 80px for timer, buttons = 42 + 40 + 28 + 8
+            // Message field
             int gap = 24;
             int reservedTimer = 80;
             int buttonsW = 42 + 40 + 28 + 8; // ON/OFF + Edit + Del + pad
@@ -189,6 +229,7 @@ public class MessengerScreen extends Screen {
                     MessengerMod.ok("Task #" + idx1 + " disabled");
                 }
                 b.setMessage(coloredOnOff(t.enabled));
+                MessengerMod.saveTasks();
             }).dimensions(rightStart, rowY + 2, 42, 20).build();
             this.addDrawableChild(toggle);
             rowButtons.add(toggle);
@@ -203,6 +244,7 @@ public class MessengerScreen extends Screen {
                 t.intervalMinutes = mins;
                 t.text = newMsg;
                 t.scheduleNext();
+                MessengerMod.saveTasks();
                 MessengerMod.ok("Task #" + idx1 + " updated.");
             }).dimensions(rightStart + 44, rowY + 2, 40, 20).build();
             this.addDrawableChild(save);
@@ -212,6 +254,7 @@ public class MessengerScreen extends Screen {
             ButtonWidget remove = ButtonWidget.builder(Text.literal("Del").formatted(Formatting.RED), b -> {
                 if (idx1 >= 1 && idx1 <= MessengerMod.TASKS.size()) {
                     MessengerMod.TASKS.remove(idx1 - 1);
+                    MessengerMod.saveTasks();
                     MessengerMod.ok("Removed task #" + idx1);
                     int totalNow = MessengerMod.TASKS.size();
                     if (firstIndex >= totalNow) firstIndex = Math.max(0, firstIndex - maxRows);
@@ -222,7 +265,6 @@ public class MessengerScreen extends Screen {
             rowButtons.add(remove);
         }
 
-        // Toggle visibility of Prev/Next: hide when all items fit on one page
         boolean multiPage = total > maxRows;
         if (prevBtn != null) prevBtn.visible = multiPage;
         if (nextBtn != null) nextBtn.visible = multiPage;
@@ -235,11 +277,15 @@ public class MessengerScreen extends Screen {
         int hrY = panelY + 24;
         ctx.fill(panelX, hrY, panelX + panelW, hrY + 1, 0x33FFFFFF);
 
-        // widgets first
+        // widgets
         super.render(ctx, mouseX, mouseY, delta);
 
-        // overlays
-        ctx.drawCenteredTextWithShadow(this.textRenderer, "Messenger", this.width / 2, 12, 0xFFFFFFFF);
+        // top-right small version label
+        String ver = "Messenger v1.0.0";
+        int verW = this.textRenderer.getWidth(ver);
+        ctx.drawTextWithShadow(this.textRenderer, ver, panelX + panelW - verW, 8, 0xFF888888);
+
+        // form labels
         ctx.drawTextWithShadow(this.textRenderer, "Minutes", panelX, panelY - 14, 0xFFFFFFFF);
         ctx.drawTextWithShadow(this.textRenderer, "Message", panelX + 75, panelY - 14, 0xFFFFFFFF);
 
