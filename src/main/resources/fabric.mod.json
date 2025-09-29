@@ -1,41 +1,22 @@
 {
 	"schemaVersion": 1,
-	"id": "modid",
+	"id": "messenger",
 	"version": "${version}",
-	"name": "Example mod",
-	"description": "This is an example description! Tell everyone what your mod is about!",
-	"authors": [
-		"Me!"
-	],
-	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
-	},
-	"license": "CC0-1.0",
-	"icon": "assets/modid/icon.png",
-	"environment": "*",
+	"name": "Messenger",
+	"description": "Auto-sends a chat message on an interval (client-only). Toggle + client commands.",
+	"authors": ["cyberman"],
+	"license": "MIT",
+	"environment": "client",
 	"entrypoints": {
-		"main": [
-			"com.example.ExampleMod"
-		],
-		"client": [
-			"com.example.ExampleModClient"
-		]
+		"client": ["pl.cyberman.messenger.MessengerMod"]
 	},
-	"mixins": [
-		"modid.mixins.json",
-		{
-			"config": "modid.client.mixins.json",
-			"environment": "client"
-		}
-	],
 	"depends": {
 		"fabricloader": ">=0.17.2",
-		"minecraft": "~1.21.8",
-		"java": ">=21",
-		"fabric-api": "*"
+		"minecraft": ">=1.21.8",
+		"fabric": "*"
 	},
-	"suggests": {
-		"another-mod": "*"
+	"contact": {
+		"sources": "https://github.com/<YOUR_GITHUB_USERNAME>/Messenger",
+		"issues": "https://github.com/<YOUR_GITHUB_USERNAME>/Messenger/issues"
 	}
 }
