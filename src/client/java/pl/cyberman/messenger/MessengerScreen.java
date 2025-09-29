@@ -57,6 +57,9 @@ public class MessengerScreen extends Screen {
 
         int msgW = Math.max(180, panelW - 70 - 70 - 10);
         addMessageField = new TextFieldWidget(this.textRenderer, panelX + 75, panelY, msgW, 20, Text.literal("Message"));
+        addMessageField.setMaxLength(Integer.MAX_VALUE);
+        addMessageField = new TextFieldWidget(this.textRenderer, panelX + 75, panelY, msgW, 20, Text.literal("Message"));
+        addMessageField.setMaxLength(Integer.MAX_VALUE);
         this.addDrawableChild(addMessageField);
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Add"), b -> {
@@ -205,18 +208,19 @@ public class MessengerScreen extends Screen {
             this.addDrawableChild(minutesField);
             rowMinuteFields.add(minutesField);
 
-            // Message field
-            int gap = 24;
-            int reservedTimer = 80;
-            int buttonsW = 42 + 40 + 28 + 8; // ON/OFF + Edit + Del + pad
-            int msgX = x + 32 + 54 + gap;
-            int msgW = Math.max(120, panelW - (msgX - panelX) - (reservedTimer + buttonsW));
-            TextFieldWidget messageField = new TextFieldWidget(this.textRenderer, msgX, rowY + 2, msgW, 20, Text.literal("Message"));
-            messageField.setText(t.text);
-            this.addDrawableChild(messageField);
-            rowMessageFields.add(messageField);
+             // Message field
+ int gap = 24;
+ int reservedTimer = 80;
+ int buttonsW = 42 + 40 + 28 + 8; // ON/OFF + Edit + Del + pad
+ int msgX = x + 32 + 54 + gap;
+ int msgW = Math.max(120, panelW - (msgX - panelX) - (reservedTimer + buttonsW));
+ TextFieldWidget messageField = new TextFieldWidget(this.textRenderer, msgX, rowY + 2, msgW, 20, Text.literal("Message"));
+ messageField.setMaxLength(Integer.MAX_VALUE);
+ messageField.setText(t.text);
+ this.addDrawableChild(messageField);
+ rowMessageFields.add(messageField);
 
-            int rightStart = panelX + panelW - (buttonsW);
+ int rightStart = panelX + panelW - (buttonsW);
 
             // ON/OFF
             ButtonWidget toggle = ButtonWidget.builder(coloredOnOff(t.enabled), b -> {
