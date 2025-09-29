@@ -100,7 +100,7 @@ public class MessengerMod implements ClientModInitializer {
                                     if (Double.isNaN(mins) || mins <= 0) { err("Invalid minutes: " + minStr); return 1; }
                                     if (txt == null || txt.isBlank()) { err("Message cannot be empty."); return 1; }
                                     TASKS.add(new MessageTask(txt, mins));
-                                    ok("Added task #" + TASKS.size() + "  every " + mins + " min");
+                                    ok("Added task #" + TASKS.size() + " every " + mins + " min");
                                     return 1;
                                 }))))
 

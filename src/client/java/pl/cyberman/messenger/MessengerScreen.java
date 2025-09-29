@@ -25,6 +25,10 @@ public class MessengerScreen extends Screen {
     private int firstIndex = 0; // index of first visible rule
     private int maxRows = 0;
 
+    // Nav buttons (we toggle visibility)
+    private ButtonWidget prevBtn;
+    private ButtonWidget nextBtn;
+
     // Track row widgets to rebuild on page change
     private final List<ButtonWidget> rowButtons = new ArrayList<>();
     private final List<TextFieldWidget> rowMinuteFields = new ArrayList<>();
@@ -41,7 +45,7 @@ public class MessengerScreen extends Screen {
 
         // --- Add form (top) ---
         addMinutesField = new TextFieldWidget(this.textRenderer, panelX, panelY, 70, 20, Text.literal("Minutes"));
-        addMinutesField.setText("1.0");
+        addMinutesField.setText("1.0"); // label drawn in render()
         this.addDrawableChild(addMinutesField);
 
         int msgW = Math.max(180, panelW - 70 - 70 - 10);
@@ -65,14 +69,35 @@ public class MessengerScreen extends Screen {
 
         // Nav + Done buttons
         int bottomY = this.height - 28;
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Prev"), b -> {
-            if (firstIndex > 0) { firstIndex = Math.max(0, firstIndex - maxRows); rebuildRowWidgets(); }
-        }).dimensions(panelX, bottomY, 60, 20).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Next"), b -> {
+        prevBtn = ButtonWidget.builder(Text.literal("Prev"), b -> {
             int total = MessengerMod.TASKS.size();
-            if (firstIndex + maxRows < total) { firstIndex = Math.min(Math.max(0, total - 1), firstIndex + maxRows); rebuildRowWidgets(); }
-        }).dimensions(panelX + 65, bottomY, 60, 20).build());
+            if (total <= 0) return;
+            int pages = Math.max(1, (int)Math.ceil(total / (double)maxRows));
+            // circular: if already at first page, go to last
+            if (firstIndex == 0) {
+                firstIndex = (pages - 1) * maxRows;
+            } else {
+                firstIndex = Math.max(0, firstIndex - maxRows);
+            }
+            rebuildRowWidgets();
+        }).dimensions(panelX, bottomY, 60, 20).build();
+        this.addDrawableChild(prevBtn);
+
+        nextBtn = ButtonWidget.builder(Text.literal("Next"), b -> {
+            int total = MessengerMod.TASKS.size();
+            if (total <= 0) return;
+            int pages = Math.max(1, (int)Math.ceil(total / (double)maxRows));
+            int lastFirst = (pages - 1) * maxRows;
+            // circular: if already at last page, go to first
+            if (firstIndex >= lastFirst) {
+                firstIndex = 0;
+            } else {
+                firstIndex = Math.min(lastFirst, firstIndex + maxRows);
+            }
+            rebuildRowWidgets();
+        }).dimensions(panelX + 65, bottomY, 60, 20).build();
+        this.addDrawableChild(nextBtn);
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> close())
             .dimensions(this.width / 2 - 40, bottomY, 80, 20).build());
@@ -140,10 +165,11 @@ public class MessengerScreen extends Screen {
             this.addDrawableChild(minutesField);
             rowMinuteFields.add(minutesField);
 
-            // Message field (flex width). Timer (reserve 80px) + buttons (42 + 40 + 28 + 8)
+            // Message field (flex width). Reserve 80px for timer, buttons = 42 + 40 + 28 + 8
+            int gap = 24;
             int reservedTimer = 80;
             int buttonsW = 42 + 40 + 28 + 8; // ON/OFF + Edit + Del + pad
-            int gap = 24; int msgX = x + 32 + 54 + gap;
+            int msgX = x + 32 + 54 + gap;
             int msgW = Math.max(120, panelW - (msgX - panelX) - (reservedTimer + buttonsW));
             TextFieldWidget messageField = new TextFieldWidget(this.textRenderer, msgX, rowY + 2, msgW, 20, Text.literal("Message"));
             messageField.setText(t.text);
@@ -195,40 +221,45 @@ public class MessengerScreen extends Screen {
             this.addDrawableChild(remove);
             rowButtons.add(remove);
         }
+
+        // Toggle visibility of Prev/Next: hide when all items fit on one page
+        boolean multiPage = total > maxRows;
+        if (prevBtn != null) prevBtn.visible = multiPage;
+        if (nextBtn != null) nextBtn.visible = multiPage;
     }
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        // 1) Backdrop + divider
+        // backdrop + divider
         ctx.fill(0, 0, this.width, this.height, 0x88000000);
         int hrY = panelY + 24;
         ctx.fill(panelX, hrY, panelX + panelW, hrY + 1, 0x33FFFFFF);
 
-        // 2) Draw all widgets
+        // widgets first
         super.render(ctx, mouseX, mouseY, delta);
 
-        // 3) Draw text overlays AFTER widgets so they stay visible
+        // overlays
         ctx.drawCenteredTextWithShadow(this.textRenderer, "Messenger", this.width / 2, 12, 0xFFFFFFFF);
-
-        // Top form labels (with shadow so they pop)
         ctx.drawTextWithShadow(this.textRenderer, "Minutes", panelX, panelY - 14, 0xFFFFFFFF);
         ctx.drawTextWithShadow(this.textRenderer, "Message", panelX + 75, panelY - 14, 0xFFFFFFFF);
 
-        // Row IDs + tiny "min" + countdown, all with shadow
         int total = MessengerMod.TASKS.size();
         int end = Math.min(total, firstIndex + maxRows);
-
         for (int i = firstIndex; i < end; i++) {
             MessengerMod.MessageTask t = MessengerMod.TASKS.get(i);
             int rowY = listTopY + (i - firstIndex) * rowHeight + 7;
 
-            // Left-side ID
+            // left ID
             ctx.drawTextWithShadow(this.textRenderer, "#" + (i + 1), panelX, rowY, 0xFFAAAAAA);
 
-            // tiny "min" after minutes box
-            int gap = 24; int msgX = panelX + 32 + 54 + gap; int minW = this.textRenderer.getWidth("min"); int minLabelX = msgX - gap + (gap - minW)/2; ctx.drawTextWithShadow(this.textRenderer, "min", minLabelX, rowY, 0xFFAAAAAA);
+            // center "min" in the 24px gap
+            int gap = 24;
+            int msgX = panelX + 32 + 54 + gap;
+            int minW = this.textRenderer.getWidth("min");
+            int minLabelX = msgX - gap + (gap - minW) / 2;
+            ctx.drawTextWithShadow(this.textRenderer, "min", minLabelX, rowY, 0xFFAAAAAA);
 
-            // countdown right before buttons
+            // countdown snug before buttons
             String timerText = t.enabled ? "next: " + formatRemaining(Math.max(0, t.nextSendMs - MessengerMod.now())) : "paused";
             int timerWidth = this.textRenderer.getWidth(timerText);
             int buttonsW = 42 + 40 + 28 + 8;
@@ -250,5 +281,3 @@ public class MessengerScreen extends Screen {
         this.client.setScreen(parent);
     }
 }
-
-
