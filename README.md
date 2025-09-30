@@ -57,3 +57,24 @@ Artifacts are in `build/libs/`.
 ## License
 
 MIT
+
+# Development
+
+## Build
+
+```bash
+.\gradlew.bat clean build
+```
+
+## Running
+
+```bash
+.\gradlew.bat runClient
+```
+
+## Release
+
+```bash
+git tag v1.0.1 -m "test release"
+git push origin v1.0.1
+```
